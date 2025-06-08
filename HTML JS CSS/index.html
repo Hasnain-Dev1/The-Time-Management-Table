@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sweet To-Do 🍬</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      /* Custom CSS for swipe animations */
+      /* These animations make tasks slide away when marked done or deleted */
+      .swipe-left {
+        animation: swipeLeft 0.4s forwards;
+      }
+      .swipe-right {
+        animation: swipeRight 0.4s forwards;
+      }
+      @keyframes swipeLeft {
+        100% {
+          transform: translateX(-100%) scale(0);
+          opacity: 0;
+        }
+      }
+      @keyframes swipeRight {
+        100% {
+          transform: translateX(100%) scale(0);
+          opacity: 0;
+        }
+      }
+
+      /* Custom Notification/Modal Styles (for user feedback, replaces browser alerts) */
+      .notification-modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 20px 30px;
+        border-radius: 10px;
+        z-index: 1000;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+        text-align: center;
+        font-size: 1.25rem; /* text-xl */
+        font-weight: 600; /* font-semibold */
+      }
+      .notification-modal.show {
+        opacity: 1;
+        visibility: visible;
+      }
+    </style>
+  </head>
+  <body
+    class="bg-pink-50 text-gray-800 flex flex-col items-center min-h-screen p-6"
+  >
+    <h1 class="text-4xl font-bold text-pink-600 mb-2">Sweet To-Do 🍬</h1>
+    <p
+      id="quoteOfDay"
+      class="text-lg italic text-pink-500 mb-4 text-center max-w-md mx-auto"
+    ></p>
+    <p class="text-xl font-medium text-pink-500 mb-6 text-center">
+      The Time Management Table<br />Wanna Save Your Time? Let’s Go! ⏳
+    </p>
+
+    <div class="w-full max-w-md">
+      <div class="flex flex-col sm:flex-row gap-2 mb-4">
+        <input
+          id="taskInput"
+          type="text"
+          placeholder="Add a sweet task..."
+          class="flex-1 p-3 rounded-lg border border-pink-300 focus:outline-none focus:ring-2 focus:ring-pink-400"
+        />
+        <input
+          id="timeInput"
+          type="time"
+          class="p-3 rounded-lg border border-pink-300 focus:outline-none focus:ring-2 focus:ring-pink-400 w-full sm:w-auto"
+        />
+        <button
+          id="addBtn"
+          class="bg-pink-400 text-white px-6 py-3 rounded-lg hover:bg-pink-500 transition w-full sm:w-auto"
+        >
+          Add
+        </button>
+      </div>
+
+      <ul id="taskList" class="space-y-3"></ul>
+    </div>
+
+    <div id="notificationModal" class="notification-modal"></div>
+
+    <audio
+      id="soundAdd"
+      src="https://www.soundjay.com/buttons/sounds/button-3.mp3"
+      preload="auto"
+    ></audio>
+    <audio
+      id="soundDone"
+      src="https://www.soundjay.com/buttons/sounds/button-4.mp3"
+      preload="auto"
+    ></audio>
+    <audio
+      id="soundDelete"
+      src="https://www.soundjay.com/buttons/sounds/button-10.mp3"
+      preload="auto"
+    ></audio>
+    <audio
+      id="reminderSound"
+      src="https://www.soundjay.com/buttons/sounds/button-3.mp3"
+      preload="auto"
+    ></audio>
+
+    <script>
+      // Array of motivational quotes to display daily
+      const quotes = [
+        "🌟 Believe you can and you're halfway there.",
+        "🍓 Productivity is the key to sweet success!",
+        "🍫 One task at a time, one day at a time.",
+        "🍭 Sweet progress is better than perfect procrastination.",
+        "🍬 Don't wait. The perfect time is now.",
+        "🎯 Focus on what matters most.",
+        "🌈 Every small step is progress.",
+        "🔥 Stay sweet, stay sharp.",
+      ];
+
+      /**
+       * Selects and displays a motivational quote based on the current date,
+       * ensuring the same quote appears for the entire day.
+       */
+      function setQuoteOfDay() {
+        const quoteEl = document.getElementById("quoteOfDay");
+        const today = new Date();
+        const index = today.getDate() % quotes.length; // Use day of month for consistent daily quote
+        quoteEl.textContent = quotes[index];
+      }
+
+      // --- Custom Notification System (replaces alert() and confirm()) ---
+      const notificationModal = document.getElementById("notificationModal");
+      let notificationTimeout;
+
+      /**
+       * Displays a custom notification message on the screen.
+       * @param {string} message - The message to display.
+       * @param {number} duration - How long (in ms) the notification should be visible.
+       */
+      function showNotification(message, duration = 3000) {
+        clearTimeout(notificationTimeout); // Clear any existing timeout
+        notificationModal.textContent = message;
+        notificationModal.classList.add("show");
+
+        notificationTimeout = setTimeout(() => {
+          notificationModal.classList.remove("show");
+        }, duration);
+      }
+
+      // --- Core To-Do App Logic ---
+
+      // Get references to key DOM elements for interaction
+      const taskInput = document.getElementById("taskInput");
+      const timeInput = document.getElementById("timeInput"); // New: Time input element
+      const taskList = document.getElementById("taskList");
+      const addBtn = document.getElementById("addBtn");
+
+      // Get references to audio elements for sound feedback
+      const soundAdd = document.getElementById("soundAdd");
+      const soundDone = document.getElementById("soundDone");
+      const soundDelete = document.getElementById("soundDelete");
+      const reminderSound = document.getElementById("reminderSound");
+
+      // Load tasks from the browser's local storage. If no tasks are saved, start with an empty array.
+      let tasks = JSON.parse(localStorage.getItem("sweetTasks")) || [];
+
+      /**
+       * Saves the current state of the `tasks` array to the browser's local storage.
+       * This ensures tasks persist even if the user closes the browser.
+       */
+      function saveTasks() {
+        localStorage.setItem("sweetTasks", JSON.stringify(tasks));
+      }
+
+      /**
+       * Clears the existing task list in the DOM and then renders all tasks
+       * from the `tasks` array. This function handles creating list items,
+       * applying styles (e.g., line-through for done tasks), adding reminder times,
+       * and setting up event listeners for interactions (clicks, swipes, buttons).
+       */
+      function renderTasks() {
+        taskList.innerHTML = ""; // Clear existing tasks to re-render
+
+        tasks.forEach((task, i) => {
+          const li = document.createElement("li");
+          // Apply card-like styling with hover effect
+          li.className = `flex items-center justify-between p-4 rounded-xl bg-white shadow-md transition-all duration-300 cursor-pointer ${
+            task.done ? "opacity-60 line-through text-gray-500" : ""
+          } hover:shadow-lg`;
+
+          // Container for task text and reminder time
+          const taskContent = document.createElement("div");
+          taskContent.className = "flex-grow flex items-center"; // Use flex for alignment
+
+          const taskTextSpan = document.createElement("span");
+          taskTextSpan.className = "text-lg font-medium";
+          taskTextSpan.textContent = task.text;
+          taskContent.appendChild(taskTextSpan);
+
+          // If a reminder time is set, display it next to the task text
+          if (task.time) {
+            const timeEl = document.createElement("span");
+            timeEl.textContent = ` [${task.time}]`;
+            timeEl.className = "text-sm text-gray-400 ml-2";
+            taskContent.appendChild(timeEl);
+          }
+          li.appendChild(taskContent); // Add combined content to li
+
+          // --- Action Buttons (Done/Delete) ---
+          const actionBtnDiv = document.createElement("div");
+          actionBtnDiv.className = "flex items-center gap-2 ml-4"; // Spacing for buttons
+
+          // Done Button (looks like a checkmark or similar)
+          const doneBtn = document.createElement("button");
+          doneBtn.className = `p-2 rounded-full transition ${
+            task.done ? "bg-green-500" : "bg-gray-200 hover:bg-green-300"
+          }`;
+          doneBtn.innerHTML = `<svg class="w-5 h-5 ${
+            task.done ? "text-white" : "text-gray-600"
+          }" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>`;
+          doneBtn.title = task.done ? "Mark as Undone" : "Mark as Done";
+          doneBtn.onclick = (e) => {
+            e.stopPropagation(); // Prevent the parent <li> click event from firing
+            toggleDone(i);
+            soundDone.play();
+          };
+          actionBtnDiv.appendChild(doneBtn);
+
+          // Delete Button (looks like a trash can)
+          const deleteBtn = document.createElement("button");
+          deleteBtn.className =
+            "p-2 rounded-full bg-gray-200 hover:bg-red-300 transition";
+          deleteBtn.innerHTML = `<svg class="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm-.002 3L7 16a1 1 0 01-1 1H5a1 1 0 01-1-1l.002-5h2z" clip-rule="evenodd"></path></svg>`;
+          deleteBtn.title = "Delete Task";
+          deleteBtn.onclick = (e) => {
+            e.stopPropagation(); // Prevent the parent <li> click event from firing
+            deleteTask(i); // Directly delete, no confirmation needed here
+            soundDelete.play();
+          };
+          actionBtnDiv.appendChild(deleteBtn);
+
+          li.appendChild(actionBtnDiv); // Append buttons to the list item
+
+          // --- Swipe gesture support for touch devices ---
+          let touchStartX = 0;
+          let touchEndX = 0;
+
+          li.addEventListener("touchstart", (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+          });
+
+          li.addEventListener("touchend", (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipeGesture(i, li);
+          });
+
+          /**
+           * Determines if a swipe gesture occurred and triggers the corresponding action (toggle done or delete).
+           * @param {number} index - The index of the task in the `tasks` array.
+           * @param {HTMLElement} element - The `<li>` DOM element representing the task.
+           */
+          function handleSwipeGesture(index, element) {
+            const deltaX = touchEndX - touchStartX;
+            const SWIPE_THRESHOLD = 75; // Increased threshold for clearer intent
+
+            if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
+              if (deltaX > 0) {
+                // Swipe right: Toggle task completion
+                element.classList.add("swipe-right");
+                setTimeout(() => {
+                  toggleDone(index);
+                  element.classList.remove("swipe-right"); // Clean up animation class
+                }, 300);
+                soundDone.play();
+              } else {
+                // Swipe left: Delete task
+                element.classList.add("swipe-left");
+                setTimeout(() => {
+                  deleteTask(index); // Direct delete for swipe, too
+                  element.classList.remove("swipe-left"); // Clean up animation class
+                }, 300);
+                soundDelete.play();
+              }
+            }
+          }
+
+          // Add the fully constructed list item to the task list in the DOM
+          taskList.appendChild(li);
+        });
+      }
+
+      /**
+       * Adds a new task to the `tasks` array based on the text in the input field
+       * and the time from the new time input field.
+       */
+      function addTask() {
+        const text = taskInput.value.trim();
+        const time = timeInput.value.trim(); // Get time from the new input field
+
+        if (!text) {
+          showNotification("Please enter a task!", 2000); // Use custom notification for error
+          return;
+        }
+
+        // A task object structure
+        tasks.push({ text, done: false, time: time || "" }); // Store time, or empty string if not provided
+        saveTasks();
+        renderTasks();
+        taskInput.value = ""; // Clear task input
+        timeInput.value = ""; // Clear time input
+        soundAdd.play();
+        showNotification("Task added! 🎉", 1500); // Use custom notification for success
+      }
+
+      /**
+       * Toggles the `done` status (true/false) of a task at a specific index.
+       * @param {number} index - The zero-based index of the task to modify.
+       */
+      function toggleDone(index) {
+        if (index >= 0 && index < tasks.length) {
+          tasks[index].done = !tasks[index].done; // Flip the done status
+          saveTasks(); // Save the updated tasks
+          renderTasks(); // Re-render to reflect the change
+          if (tasks[index].done) {
+            showNotification("Task completed! ✅", 1500);
+          } else {
+            showNotification("Task marked undone. 📝", 1500);
+          }
+        }
+      }
+
+      /**
+       * Deletes a task from the `tasks` array.
+       * This function now directly deletes without an extra confirmation dialog,
+       * making the UX smoother, especially with the icon and swipe actions.
+       * @param {number} index - The zero-based index of the task to delete.
+       */
+      function deleteTask(index) {
+        if (index >= 0 && index < tasks.length) {
+          const deletedTaskText = tasks[index].text; // Get text before deleting for notification
+          tasks.splice(index, 1); // Remove the task from the array
+          saveTasks(); // Save the updated tasks
+          renderTasks(); // Re-render the list
+          showNotification(`"${deletedTaskText}" deleted. 🗑️`, 2000); // Custom notification for deletion
+        }
+      }
+
+      // --- Event Listeners ---
+      // Listen for clicks on the "Add" button
+      addBtn.addEventListener("click", addTask);
+      // Listen for the "Enter" key press in the task input field
+      taskInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          addTask();
+        }
+      });
+      // Allow pressing Enter in the time input to add task as well
+      timeInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          addTask();
+        }
+      });
+
+      // --- Reminder Functionality ---
+      // Set up an interval to check for reminders every minute
+      setInterval(() => {
+        const now = new Date();
+        const currentTime = now.toTimeString().slice(0, 5); // Get current time in HH:MM (e.g., "09:30")
+
+        tasks.forEach((task, i) => {
+          // Check conditions for triggering a reminder:
+          // 1. Task is not marked as done
+          // 2. Task has a reminder time set
+          // 3. Task's reminder time matches the current time
+          if (!task.done && task.time && task.time === currentTime) {
+            reminderSound.play(); // Play reminder sound
+            showNotification(`🔔 Reminder: "${task.text}"!`, 5000); // Use custom notification for reminder
+            // IMPORTANT: Clear the reminder time for this task to prevent repeated alerts
+            tasks[i].time = ""; // Mark reminder as "fired" for this task
+            saveTasks(); // Save this change to local storage
+            renderTasks(); // Re-render the list to show the reminder time removed
+          }
+        });
+      }, 60000); // Interval set to 60000 milliseconds (1 minute)
+
+      // --- Initialization ---
+      // Ensure these functions run as soon as the DOM is fully loaded
+      document.addEventListener("DOMContentLoaded", () => {
+        setQuoteOfDay(); // Display the daily quote
+        renderTasks(); // Load and display tasks from local storage
+      });
+    </script>
+  </body>
+</html>
+<!-- This HTML file creates a simple To-Do application with motivational quotes, task management, and sound feedback. -->
