@@ -9,7 +9,7 @@ from datetime import datetime
 # --- Global WebSocket Clients Set ---
 connected_clients = set()
 
-# --- Speech Synthesis Setup ---
+# Setup TTS engine
 engine = pyttsx3.init()
 engine.setProperty('rate', 170)  # Speed of speech
 engine.setProperty('volume', 1.0)  # Volume
@@ -184,24 +184,28 @@ async def listen_for_wake_word():
                     asyncio.create_task(respond_to_command(recognizer, source))
 
             except sr.UnknownValueError:
-                pass  # Ignore unintelligible audio if no wake word was detected
-            except sr.WaitTimeoutError:
-                pass # No speech detected within phrase_time_limit, continue listening for wake word
-            except sr.RequestError as e:
-                speak(f"Could not request results from Google Speech Recognition service; {e}")
-                await asyncio.sleep(5) # Wait before retrying after a network error
-            except Exception as e:
-                print(f"An unexpected error occurred in wake word listener: {e}")
-                await asyncio.sleep(1) # Small delay to prevent tight loop on persistent errors
+                pass  # Ignore non-understandable audio
+            except sr.RequestError:
+                speak("⚠️ Network error occurred. Please check your connection.")
 
-# --- Main entry point for the Python script ---
+# --- Main Coroutine ---
+# --- Main Coroutine ---
 async def main():
-    # Start the WebSocket server concurrently with the voice assistant
-    websocket_server_task = websockets.serve(register_websocket, "localhost", 8765)
-    voice_assistant_task = listen_for_wake_word()
+    # Start WebSocket server (this is an awaitable itself)
+    websocket_server = websockets.serve(register_websocket, "localhost", 8765)
+
+    # Start listening for wake word (this needs to be a created task)
+    wake_word_task = asyncio.create_task(listen_for_wake_word())
 
     print("SweetBot Voice Assistant starting...")
-    await asyncio.gather(websocket_server_task, voice_assistant_task)
+    # Run both the websocket server and the wake word task concurrently
+    await asyncio.gather(websocket_server, wake_word_task)
 
+# Run the assistant
 if __name__ == "__main__":
+    # Correctly call asyncio.run() with your main async function
     asyncio.run(main())
+
+# Run the assistant
+if __name__ == "__main__":
+    listen_for_wake_word()

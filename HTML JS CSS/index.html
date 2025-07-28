@@ -10,7 +10,6 @@
     />
     <style>
       /* Custom CSS for swipe animations */
-      /* These animations make tasks slide away when marked done or deleted */
       .swipe-left {
         animation: swipeLeft 0.4s forwards;
       }
@@ -30,7 +29,7 @@
         }
       }
 
-      /* Custom Notification/Modal Styles (for user feedback, replaces browser alerts) */
+      /* Custom Notification/Modal Styles */
       .notification-modal {
         position: fixed;
         top: 50%;
@@ -126,28 +125,19 @@
         "🔥 Stay sweet, stay sharp.",
       ];
 
-      /**
-       * Selects and displays a motivational quote based on the current date,
-       * ensuring the same quote appears for the entire day.
-       */
       function setQuoteOfDay() {
         const quoteEl = document.getElementById("quoteOfDay");
         const today = new Date();
-        const index = today.getDate() % quotes.length; // Use day of month for consistent daily quote
+        const index = today.getDate() % quotes.length;
         quoteEl.textContent = quotes[index];
       }
 
-      // --- Custom Notification System (replaces alert() and confirm()) ---
+      // --- Custom Notification System ---
       const notificationModal = document.getElementById("notificationModal");
       let notificationTimeout;
 
-      /**
-       * Displays a custom notification message on the screen.
-       * @param {string} message - The message to display.
-       * @param {number} duration - How long (in ms) the notification should be visible.
-       */
       function showNotification(message, duration = 3000) {
-        clearTimeout(notificationTimeout); // Clear any existing timeout
+        clearTimeout(notificationTimeout);
         notificationModal.textContent = message;
         notificationModal.classList.add("show");
 
@@ -157,69 +147,66 @@
       }
 
       // --- Core To-Do App Logic ---
-
-      // Get references to key DOM elements for interaction
       const taskInput = document.getElementById("taskInput");
-      const timeInput = document.getElementById("timeInput"); // New: Time input element
+      const timeInput = document.getElementById("timeInput");
       const taskList = document.getElementById("taskList");
       const addBtn = document.getElementById("addBtn");
 
-      // Get references to audio elements for sound feedback
       const soundAdd = document.getElementById("soundAdd");
       const soundDone = document.getElementById("soundDone");
       const soundDelete = document.getElementById("soundDelete");
       const reminderSound = document.getElementById("reminderSound");
 
-      // Load tasks from the browser's local storage. If no tasks are saved, start with an empty array.
       let tasks = JSON.parse(localStorage.getItem("sweetTasks")) || [];
+      let firedReminders =
+        JSON.parse(localStorage.getItem("firedReminders")) || {}; // Track fired reminders for the day
 
-      /**
-       * Saves the current state of the `tasks` array to the browser's local storage.
-       * This ensures tasks persist even if the user closes the browser.
-       */
       function saveTasks() {
         localStorage.setItem("sweetTasks", JSON.stringify(tasks));
       }
 
-      /**
-       * Clears the existing task list in the DOM and then renders all tasks
-       * from the `tasks` array. This function handles creating list items,
-       * applying styles (e.g., line-through for done tasks), adding reminder times,
-       * and setting up event listeners for interactions (clicks, swipes, buttons).
-       */
+      function saveFiredReminders() {
+        localStorage.setItem("firedReminders", JSON.stringify(firedReminders));
+      }
+
+      // Clear fired reminders daily
+      function resetDailyReminders() {
+        const today = new Date().toDateString();
+        if (firedReminders.date !== today) {
+          firedReminders = { date: today, reminders: {} };
+          saveFiredReminders();
+          console.log("Daily reminders reset.");
+        }
+      }
+
       function renderTasks() {
-        taskList.innerHTML = ""; // Clear existing tasks to re-render
+        taskList.innerHTML = "";
 
         tasks.forEach((task, i) => {
           const li = document.createElement("li");
-          // Apply card-like styling with hover effect
           li.className = `flex items-center justify-between p-4 rounded-xl bg-white shadow-md transition-all duration-300 cursor-pointer ${
             task.done ? "opacity-60 line-through text-gray-500" : ""
           } hover:shadow-lg`;
 
-          // Container for task text and reminder time
           const taskContent = document.createElement("div");
-          taskContent.className = "flex-grow flex items-center"; // Use flex for alignment
+          taskContent.className = "flex-grow flex items-center";
 
           const taskTextSpan = document.createElement("span");
           taskTextSpan.className = "text-lg font-medium";
           taskTextSpan.textContent = task.text;
           taskContent.appendChild(taskTextSpan);
 
-          // If a reminder time is set, display it next to the task text
           if (task.time) {
             const timeEl = document.createElement("span");
             timeEl.textContent = ` [${task.time}]`;
             timeEl.className = "text-sm text-gray-400 ml-2";
             taskContent.appendChild(timeEl);
           }
-          li.appendChild(taskContent); // Add combined content to li
+          li.appendChild(taskContent);
 
-          // --- Action Buttons (Done/Delete) ---
           const actionBtnDiv = document.createElement("div");
-          actionBtnDiv.className = "flex items-center gap-2 ml-4"; // Spacing for buttons
+          actionBtnDiv.className = "flex items-center gap-2 ml-4";
 
-          // Done Button (looks like a checkmark or similar)
           const doneBtn = document.createElement("button");
           doneBtn.className = `p-2 rounded-full transition ${
             task.done ? "bg-green-500" : "bg-gray-200 hover:bg-green-300"
@@ -229,13 +216,12 @@
           }" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>`;
           doneBtn.title = task.done ? "Mark as Undone" : "Mark as Done";
           doneBtn.onclick = (e) => {
-            e.stopPropagation(); // Prevent the parent <li> click event from firing
+            e.stopPropagation();
             toggleDone(i);
             soundDone.play();
           };
           actionBtnDiv.appendChild(doneBtn);
 
-          // Delete Button (looks like a trash can)
           const deleteBtn = document.createElement("button");
           deleteBtn.className =
             "p-2 rounded-full bg-gray-200 hover:bg-red-300 transition";
@@ -263,11 +249,6 @@
             handleSwipeGesture(i, li);
           });
 
-          /**
-           * Determines if a swipe gesture occurred and triggers the corresponding action (toggle done or delete).
-           * @param {number} index - The index of the task in the `tasks` array.
-           * @param {HTMLElement} element - The `<li>` DOM element representing the task.
-           */
           function handleSwipeGesture(index, element) {
             const deltaX = touchEndX - touchStartX;
             const SWIPE_THRESHOLD = 75; // Increased threshold for clearer intent
@@ -278,58 +259,48 @@
                 element.classList.add("swipe-right");
                 setTimeout(() => {
                   toggleDone(index);
-                  element.classList.remove("swipe-right"); // Clean up animation class
+                  element.classList.remove("swipe-right");
                 }, 300);
                 soundDone.play();
               } else {
                 // Swipe left: Delete task
                 element.classList.add("swipe-left");
                 setTimeout(() => {
-                  deleteTask(index); // Direct delete for swipe, too
-                  element.classList.remove("swipe-left"); // Clean up animation class
+                  deleteTask(index);
+                  element.classList.remove("swipe-left");
                 }, 300);
                 soundDelete.play();
               }
             }
           }
-
-          // Add the fully constructed list item to the task list in the DOM
           taskList.appendChild(li);
         });
       }
 
-      /**
-       * Adds a new task to the `tasks` array based on the text in the input field
-       * and the time from the new time input field.
-       */
-      function addTask() {
-        const text = taskInput.value.trim();
-        const time = timeInput.value.trim(); // Get time from the new input field
+      function addTask(text, time = "") {
+        // text and time can be passed from WebSocket or from input fields
+        const taskText = text || taskInput.value.trim();
+        const taskTime = time || timeInput.value.trim();
 
-        if (!text) {
-          showNotification("Please enter a task!", 2000); // Use custom notification for error
+        if (!taskText) {
+          showNotification("Please enter a task!", 2000);
           return;
         }
 
-        // A task object structure
-        tasks.push({ text, done: false, time: time || "" }); // Store time, or empty string if not provided
+        tasks.push({ text: taskText, done: false, time: taskTime });
         saveTasks();
         renderTasks();
-        taskInput.value = ""; // Clear task input
-        timeInput.value = ""; // Clear time input
+        taskInput.value = "";
+        timeInput.value = "";
         soundAdd.play();
-        showNotification("Task added! 🎉", 1500); // Use custom notification for success
+        showNotification("Task added! 🎉", 1500);
       }
 
-      /**
-       * Toggles the `done` status (true/false) of a task at a specific index.
-       * @param {number} index - The zero-based index of the task to modify.
-       */
       function toggleDone(index) {
         if (index >= 0 && index < tasks.length) {
-          tasks[index].done = !tasks[index].done; // Flip the done status
-          saveTasks(); // Save the updated tasks
-          renderTasks(); // Re-render to reflect the change
+          tasks[index].done = !tasks[index].done;
+          saveTasks();
+          renderTasks();
           if (tasks[index].done) {
             showNotification("Task completed! ✅", 1500);
           } else {
@@ -338,32 +309,32 @@
         }
       }
 
-      /**
-       * Deletes a task from the `tasks` array.
-       * This function now directly deletes without an extra confirmation dialog,
-       * making the UX smoother, especially with the icon and swipe actions.
-       * @param {number} index - The zero-based index of the task to delete.
-       */
       function deleteTask(index) {
         if (index >= 0 && index < tasks.length) {
-          const deletedTaskText = tasks[index].text; // Get text before deleting for notification
-          tasks.splice(index, 1); // Remove the task from the array
-          saveTasks(); // Save the updated tasks
-          renderTasks(); // Re-render the list
-          showNotification(`"${deletedTaskText}" deleted. 🗑️`, 2000); // Custom notification for deletion
+          const deletedTaskText = tasks[index].text;
+          tasks.splice(index, 1);
+          saveTasks();
+          renderTasks();
+          showNotification(`"${deletedTaskText}" deleted. 🗑️`, 2000);
         }
       }
 
+      // Voice command helper functions
+      function findTaskByText(searchText) {
+        // Finds the first task whose text contains the searchText (case-insensitive)
+        // This is useful for voice commands where the user might not say the exact full task.
+        return tasks.findIndex((task) =>
+          task.text.toLowerCase().includes(searchText.toLowerCase())
+        );
+      }
+
       // --- Event Listeners ---
-      // Listen for clicks on the "Add" button
-      addBtn.addEventListener("click", addTask);
-      // Listen for the "Enter" key press in the task input field
+      addBtn.addEventListener("click", () => addTask());
       taskInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           addTask();
         }
       });
-      // Allow pressing Enter in the time input to add task as well
       timeInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           addTask();
@@ -371,29 +342,93 @@
       });
 
       // --- Reminder Functionality ---
-      // Set up an interval to check for reminders every minute
       setInterval(() => {
+        resetDailyReminders(); // Ensure reminders reset each day
         const now = new Date();
-        const currentTime = now.toTimeString().slice(0, 5); // Get current time in HH:MM (e.g., "09:30")
+        const currentTime = now.toTimeString().slice(0, 5); // HH:MM (e.g., "09:30")
 
         tasks.forEach((task, i) => {
-          // Check conditions for triggering a reminder:
-          // 1. Task is not marked as done
-          // 2. Task has a reminder time set
-          // 3. Task's reminder time matches the current time
-          if (!task.done && task.time && task.time === currentTime) {
-            reminderSound.play(); // Play reminder sound
-            showNotification(`🔔 Reminder: "${task.text}"!`, 5000); // Use custom notification for reminder
-            // IMPORTANT: Clear the reminder time for this task to prevent repeated alerts
-            tasks[i].time = ""; // Mark reminder as "fired" for this task
-            saveTasks(); // Save this change to local storage
-            renderTasks(); // Re-render the list to show the reminder time removed
+          const reminderId = `${task.text}-${task.time}`; // Unique ID for this specific reminder
+          // Check if not done, has time, matches current time, and hasn't fired today
+          if (
+            !task.done &&
+            task.time &&
+            task.time === currentTime &&
+            !firedReminders.reminders[reminderId]
+          ) {
+            reminderSound.play();
+            showNotification(`🔔 Reminder: "${task.text}"!`, 5000);
+            firedReminders.reminders[reminderId] = true; // Mark as fired for today
+            saveFiredReminders();
+            // If you want the reminder to only fire once EVER, uncomment the lines below:
+            // tasks[i].time = "";
+            // saveTasks();
+            // renderTasks();
           }
         });
-      }, 60000); // Interval set to 60000 milliseconds (1 minute)
+      }, 60000); // Check every minute (60 seconds)
+
+      // --- WebSocket Communication ---
+      let ws;
+
+      function connectWebSocket() {
+        ws = new WebSocket("ws://localhost:8765"); // Connect to your Python server
+
+        ws.onopen = (event) => {
+          console.log("WebSocket connected!");
+          showNotification("Voice Assistant connection established! 🎤", 2000);
+        };
+
+        ws.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          console.log("Message from Python:", message);
+
+          if (message.action === "addTask") {
+            addTask(message.text, message.time); // Use the data from Python
+          } else if (message.action === "markDone") {
+            const index = findTaskByText(message.text);
+            if (index !== -1) {
+              toggleDone(index); // Mark task as done
+            } else {
+              showNotification(
+                `Voice command: Task "${message.text}" not found to mark done.`,
+                3000
+              );
+            }
+          } else if (message.action === "deleteTask") {
+            const index = findTaskByText(message.text);
+            if (index !== -1) {
+              deleteTask(index); // Delete task
+            } else {
+              showNotification(
+                `Voice command: Task "${message.text}" not found to delete.`,
+                3000
+              );
+            }
+          }
+          // You can add more actions here as your voice commands expand
+        };
+
+        ws.onclose = (event) => {
+          console.warn(
+            "WebSocket disconnected. Attempting to reconnect in 5 seconds..."
+          );
+          showNotification(
+            "Voice Assistant disconnected. 🔴 Reconnecting...",
+            3000
+          );
+          // Simple reconnect logic (you might want a more robust backoff strategy)
+          setTimeout(connectWebSocket, 5000);
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+          showNotification("Voice Assistant connection error! ❌", 3000);
+          ws.close(); // Close the connection to trigger onclose and reconnect
+        };
+      }
 
       // --- Initialization ---
-      // Ensure these functions run as soon as the DOM is fully loaded
       document.addEventListener("DOMContentLoaded", () => {
         setQuoteOfDay(); // Display the daily quote
         renderTasks(); // Load and display tasks from local storage
@@ -401,4 +436,3 @@
     </script>
   </body>
 </html>
-<!-- This HTML file creates a simple To-Do application with motivational quotes, task management, and sound feedback. -->
